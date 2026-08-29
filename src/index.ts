@@ -12,3 +12,5 @@ export { AdaptationDecisionEngine } from "./core/AdaptationDecisionEngine.js";
 export type { AdaptationDecisionResult, AdaptationDecisionEngineOptions } from "./core/AdaptationDecisionEngine.js";
 export { AdaptationExecutor } from "./core/AdaptationExecutor.js";
 export type { AdaptationResult, AdaptationExecutorResult, AdaptationExecutorOptions } from "./core/AdaptationExecutor.js";
+export { LearnableStateEngine } from "./core/LearnableStateEngine.js";
+export type { LearnableStateEvaluation, LearnableStateEngineOptions } from "./core/LearnableStateEngine.js";
