@@ -3,13 +3,17 @@ import { TransitionLearner } from "../src/core/TransitionLearner.js";
 
 describe("TransitionLearner", () => {
   it("returns null when no transition has been observed", () => {
-    const learner = new TransitionLearner();
+    const learner = new TransitionLearner<string>({
+      keyOf: state => state
+    });
 
     expect(learner.predictNext("home")).toBeNull();
   });
 
   it("learns transition probabilities from observations", () => {
-    const learner = new TransitionLearner();
+    const learner = new TransitionLearner<string>({
+      keyOf: state => state
+    });
 
     learner.observe("home", "search");
     learner.observe("home", "search");
@@ -21,7 +25,9 @@ describe("TransitionLearner", () => {
   });
 
   it("predicts the most frequently observed next state", () => {
-    const learner = new TransitionLearner();
+    const learner = new TransitionLearner<string>({
+      keyOf: state => state
+    });
 
     learner.observe("home", "search");
     learner.observe("home", "search");
@@ -30,7 +36,6 @@ describe("TransitionLearner", () => {
 
     const prediction = learner.predictNext("home");
 
-    expect(prediction).not.toBeNull();
     expect(prediction?.state).toBe("search");
     expect(prediction?.probability).toBeCloseTo(0.75);
     expect(prediction?.observations).toBe(4);
@@ -39,7 +44,9 @@ describe("TransitionLearner", () => {
   });
 
   it("treats different previous states independently", () => {
-    const learner = new TransitionLearner();
+    const learner = new TransitionLearner<string>({
+      keyOf: state => state
+    });
 
     learner.observe("home", "search");
     learner.observe("home", "search");
@@ -56,4 +63,47 @@ describe("TransitionLearner", () => {
     expect(profilePrediction?.probability).toBe(1);
     expect(profilePrediction?.observations).toBe(1);
   });
+
+  it("supports object states through a custom key function", () => {
+    type PageState = {
+      id: string;
+      title: string;
+    };
+
+    const learner = new TransitionLearner<PageState>({
+      keyOf: state => state.id
+    });
+
+    const home = { id: "home", title: "Home" };
+    const search = { id: "search", title: "Search" };
+
+    learner.observe(home, search);
+
+    const prediction = learner.predictNext(home);
+
+    expect(prediction?.state).toEqual(search);
+    expect(prediction?.probability).toBe(1);
+    expect(prediction?.observations).toBe(1);
+  });
+});
+ 
+it("uses the latest state value associated with a key", () => {
+  type PageState = { id: string; title: string };
+ 
+  const learner = new TransitionLearner<PageState>({
+    keyOf: state => state.id
+  });
+ 
+  const home = { id: "home", title: "Home" };
+  const firstSearch = { id: "search", title: "Search" };
+  const updatedSearch = { id: "search", title: "Search Results" };
+ 
+  learner.observe(home, firstSearch);
+  learner.observe(home, updatedSearch);
+ 
+  const prediction = learner.predictNext(home);
+ 
+  expect(prediction?.state).toEqual(updatedSearch);
+  expect(prediction?.probability).toBe(1);
+  expect(prediction?.observations).toBe(2);
 });
