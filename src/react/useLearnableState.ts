@@ -47,7 +47,8 @@ export function useLearnableState<TState>(
     });
 
     const policy = new DecisionPolicy({
-      confidenceThreshold: options.confidenceThreshold ?? 0.8
+      confidenceThreshold: options.confidenceThreshold ?? 0.8,
+      marginThreshold: options.marginThreshold ?? 0
     });
 
     const safety = new SafetyConstraints<TState>(

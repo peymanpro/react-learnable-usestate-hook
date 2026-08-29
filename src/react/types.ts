@@ -6,6 +6,7 @@ import type { StateKey } from "../core/TransitionLearner.js";
 export interface LearnableStateOptions<TState> {
   readonly keyOf?: (state: TState) => StateKey;
   readonly confidenceThreshold?: number;
+  readonly marginThreshold?: number;
   readonly safetyConstraints?: readonly SafetyConstraint<TState>[];
 }
 
