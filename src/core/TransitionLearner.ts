@@ -20,6 +20,7 @@ export class TransitionLearner<TState> {
 
   private readonly transitions = new Map<StateKey, Map<StateKey, number>>();
   private readonly states = new Map<StateKey, TState>();
+  private readonly observationCounts = new Map<StateKey, number>();
   private uniqueTransitionCount = 0;
 
   constructor(options: TransitionLearnerOptions<TState>) {
@@ -48,6 +49,7 @@ export class TransitionLearner<TState> {
 
       nextStates = new Map<StateKey, number>();
       this.transitions.set(previousKey, nextStates);
+      this.observationCounts.set(previousKey, 0);
     }
 
     if (!nextStates.has(currentKey)) {
@@ -61,6 +63,11 @@ export class TransitionLearner<TState> {
       nextStates.set(currentKey, nextStates.get(currentKey)! + 1);
     }
 
+    this.observationCounts.set(
+      previousKey,
+      (this.observationCounts.get(previousKey) ?? 0) + 1
+    );
+
     this.states.set(currentKey, current);
   }
 
@@ -73,8 +80,7 @@ export class TransitionLearner<TState> {
       return 0;
     }
 
-    const total = Array.from(nextStates.values())
-      .reduce((sum, count) => sum + count, 0);
+    const total = this.observationCounts.get(previousKey) ?? 0;
 
     if (total === 0) {
       return 0;
@@ -111,8 +117,11 @@ export class TransitionLearner<TState> {
       return null;
     }
 
-    const observations = Array.from(nextStates.values())
-      .reduce((sum, count) => sum + count, 0);
+    const observations = this.observationCounts.get(previousKey) ?? 0;
+
+    if (observations === 0) {
+      return null;
+    }
 
     const probability = bestCount / observations;
     const confidence = wilsonLowerBound(bestCount, observations);
