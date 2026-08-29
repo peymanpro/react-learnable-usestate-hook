@@ -1,598 +1,721 @@
 ﻿# react-learnable-usestate-hook
 
-An experimental React hook that augments `useState` with lightweight online transition learning, statistical confidence estimation, safety constraints, and controlled adaptation.
+A TypeScript/React state-management library with online transition learning, statistical confidence estimation, safety constraints, and controlled state adaptation.
 
-## Status
+**Version:** 0.1.0 (Experimental)
 
-**Version:** 0.1.0
+This is a research-oriented implementation that explores how React state management can be augmented with lightweight online learning from observed state transitions. The project demonstrates this concept through reproducible tests, benchmarks, and synthetic workload evaluation.
 
-This is a research-oriented experimental implementation. The project demonstrates a concrete learning-enabled state mechanism and evaluates its behavior with reproducible tests, benchmarks, and synthetic workloads.
+It does **not** claim novelty in the mathematical techniques used, and it does **not** claim general-purpose superiority over ordinary `useState`.
 
-It does **not** claim that the mathematical techniques used here are novel, and it does **not** claim general-purpose superiority over ordinary React state.
+---
 
-## Concept
+## Overview
 
-Ordinary React state is application-controlled:
+### Problem
 
-$$
-s_{t+1}=f(s_t,a_t)
-$$
+Ordinary React state is application-controlled. The application explicitly calls `setState` to transition between states. There is no automatic learning from observed patterns or adaptation based on statistical evidence.
 
-where `s_t` is the current state and `a_t` is an application action or update.
+### Solution approach
 
-`useLearnableState` adds an internal observation model without replacing deterministic state updates:
+`useLearnableState` adds an internal observation model that learns from committed state transitions without replacing deterministic application-driven updates. After each state change, the hook records the transition. At an explicit call to `advance()`, the learned model makes a prediction about the next state, computes statistical confidence, applies safety constraints, and optionally performs controlled adaptation.
 
-$$
-s_t \\rightarrow s_{t+1}
-$$
+### Key distinction
 
-is observed after the state transition has been committed.
+A prediction is not automatically an action. Adaptation is explicitly controlled by:
 
-The system then separates five concepts:
+1. **Statistical thresholds** — confidence must exceed a configured minimum
+2. **Margin thresholds** — the prediction must be sufficiently dominant
+3. **Safety constraints** — application-defined rules must be satisfied
+4. **Explicit invocation** — `advance()` must be called to attempt adaptation
 
-$$
-\\text{Observation}
-\\rightarrow
-\\text{Prediction}
-\\rightarrow
-\\text{Confidence}
-\\rightarrow
-\\text{Decision}
-\\rightarrow
-\\text{Adaptation}
-$$
+Ordinary application-driven state updates remain fully deterministic and independent of learning.
 
-The central design principle is:
+---
 
-> A prediction is not automatically an action.
+## Architecture
+
+The library consists of an independent learning/adaptation core integrated with React through a custom hook:
+
+```text
+React application
+      |
+      v
+useLearnableState
+      |
+      v
+LearnableStateEngine
+      |
+      +--> TransitionLearner
+      +--> PredictionEngine
+      +--> ConfidenceCalculator
+      +--> DecisionPolicy
+      +--> SafetyValidator
+      +--> AdaptationExecutor
+```
+
+**TransitionLearner** observes committed state transitions and maintains online statistics about observed frequencies.
+
+**PredictionEngine** uses empirical transition frequencies to select the most likely next state given the current state.
+
+**ConfidenceCalculator** applies Wilson confidence intervals to provide a statistical lower bound for the probability of the selected prediction.
+
+**DecisionPolicy** combines confidence, margin, and safety constraints to decide whether adaptation should be attempted.
+
+**SafetyValidator** applies application-defined constraints before executing any adaptation.
+
+**AdaptationExecutor** commits an adapted state if all conditions pass, or returns to the deterministic fallback.
+
+---
+
+## Conceptual lifecycle
+
+The flow from an application state update to potential adaptation is:
+
+```text
+application calls setState
+        ↓
+React commits new state
+        ↓
+transition is observed
+        ↓
+learner updates frequency counts
+        ↓
+       [later]
+        ↓
+advance() is called
+        ↓
+prediction generated
+        ↓
+confidence computed
+        ↓
+decision gates checked
+        ↓
+safety constraints validated
+        ↓
+adaptation or fallback
+```
+
+Each step is separated so that prediction, confidence, decision, and adaptation are distinct and auditable concepts.
+
+---
 
 ## Mathematical model
 
-### 1. State transition observations
+### State space and transitions
+
+Let $S = \{s_1, s_2, \ldots, s_m\}$ be the set of observed states.
+
+For two states $s_i$ and $s_j$, define the transition count as:
+
+$$
+N(s_i, s_j)
+$$
+
+This is the number of times a transition from $s_i$ to $s_j$ has been observed.
+
+**Example:** For an observed sequence
+
+$$
+\text{home} \to \text{search} \to \text{home} \to \text{search} \to \text{profile}
+$$
+
+we have $N(\text{home}, \text{search}) = 2$ and $N(\text{home}, \text{profile}) = 0$.
+
+The implementation stores these counts online as transitions are committed. There is no batch training phase.
+
+### Empirical transition probability
+
+Given the current state $s_i$, the empirical probability of observing $s_j$ next is:
+
+$$
+\hat{P}(s_j \mid s_i) = \frac{N(s_i, s_j)}{\sum_k N(s_i, s_k)}
+$$
 
 Let:
 
 $$
-S=\\{s_1,s_2,\\ldots,s_m\\}
+n_i = \sum_k N(s_i, s_k)
 $$
 
-be the set of observed states.
-
-For two states `s_i` and `s_j`, define the transition count:
+be the total number of transitions observed from $s_i$. Then:
 
 $$
-N(s_i,s_j)
+\hat{P}(s_j \mid s_i) = \frac{N(s_i, s_j)}{n_i}
 $$
 
-as the number of observed transitions from `s_i` to `s_j`.
-
-For example, suppose the observed sequence is:
+These probabilities form a valid distribution:
 
 $$
-\\text{home}\\rightarrow\\text{search}\\rightarrow\\text{home}\\rightarrow\\text{search}\\rightarrow\\text{profile}
+\sum_j \hat{P}(s_j \mid s_i) = 1
 $$
 
-Then:
+for any state with at least one observed outgoing transition.
+
+### Prediction
+
+The predictor selects the most frequently observed destination from the current state:
 
 $$
-N(\\text{home},\\text{search})=2
+\hat{s}_{t+1} = \operatorname*{arg\,max}_{s_j} N(s_t, s_j)
 $$
 
-and:
+If multiple states tie for the highest frequency, the implementation uses the insertion order of the transition map as a deterministic tie-breaker. This is intentionally simple in version 0.1.0.
+
+A prediction object exposes:
+
+- Predicted state
+- Empirical probability
+- Runner-up probability
+- Prediction margin
+- Total observation count
+- Statistical confidence
+
+### Prediction probability and runner-up
+
+The probability of the selected prediction is:
 
 $$
-N(\\text{home},\\text{profile})=0.
+P_1 = \hat{P}(\hat{s}_{t+1} \mid s_t)
 $$
 
-The implementation stores these observations online; there is no batch training phase.
-
-### 2. Empirical transition probability
-
-For a current state `s_i`, the empirical probability of observing `s_j` next is the maximum-likelihood estimate:
+The probability of the second-most frequent candidate is:
 
 $$
-\\hat P(s_j\\mid s_i)
-=
-\\frac{N(s_i,s_j)}
-{\\sum_k N(s_i,s_k)}.
+P_2 = \max_{s_j \ne \hat{s}_{t+1}} \hat{P}(s_j \mid s_t)
 $$
 
-The denominator is the total number of observed transitions originating from `s_i`:
+The prediction margin quantifies how much the selected prediction dominates the runner-up:
 
 $$
-n_i=\\sum_k N(s_i,s_k).
+M = P_1 - P_2
 $$
 
-Therefore:
+A large margin indicates high separation between the most likely and second-most-likely destinations. If no runner-up exists, $P_2 = 0$ and therefore $M = P_1$.
 
-$$
-\\hat P(s_j\\mid s_i)=\\frac{N(s_i,s_j)}{n_i}.
-$$
+**Important:** Empirical probability $P_1$ is not the probability that the prediction will be correct. It is the observed frequency of that transition. Experiments in version 0.1.0 do not establish that margin provides a consistent improvement over confidence alone.
 
-The probabilities satisfy:
-
-$$
-\\sum_j \\hat P(s_j\\mid s_i)=1
-$$
-
-for a state with at least one observed outgoing transition.
-
-### 3. Prediction
-
-The current predictor chooses the most frequently observed next state:
-
-$$
-\\hat s_{t+1}
-=
-\\underset{s_j}{\\operatorname{arg\\,max}}
-\\;N(s_t,s_j).
-$$
-
-If several states have equal frequency, the current implementation follows the insertion order of the underlying transition map. This tie-breaking rule is intentionally simple in version 0.1.0.
-
-The resulting prediction contains:
-
-- predicted state
-- empirical probability
-- runner-up probability
-- prediction margin
-- observation count
-- statistical confidence
-
-### 4. Prediction probability
-
-Let:
-
-$$
-P_1=\\hat P(\\hat s_{t+1}\\mid s_t)
-$$
-
-be the probability of the selected prediction.
-
-The prediction result exposes this probability directly.
-
-Important: `P_1` is the observed transition frequency. It is **not automatically the probability that the next prediction will be correct**.
-
-### 5. Runner-up probability and margin
-
-Let `P_2` be the probability of the second most frequently observed candidate:
-
-$$
-P_2=\\max_{s_j\\neq\\hat s_{t+1}}
-\\hat P(s_j\\mid s_t).
-$$
-
-The prediction margin is:
-
-$$
-M=P_1-P_2.
-$$
-
-A large margin means the selected candidate is much more dominant than its nearest competitor.
-
-If there is no runner-up:
-
-$$
-P_2=0
-$$
-
-and therefore:
-
-$$
-M=P_1.
-$$
-
-The margin is available to the decision policy, but experiments in version 0.1.0 do not establish that margin provides a general improvement over confidence alone.
+---
 
 ## Statistical confidence
 
-### 6. Why probability is not enough
+### Why transition probability alone is insufficient
 
-Consider two datasets with the same empirical probability:
-
-$$
-\\frac{9}{10}=0.9
-$$
-
-and:
+Consider two transition histories with identical empirical probabilities:
 
 $$
-\\frac{900}{1000}=0.9.
+\frac{9}{10} = 0.9 \quad \text{versus} \quad \frac{900}{1000} = 0.9
 $$
 
-The observed proportion is identical, but the amount of statistical evidence is very different.
+Both yield probability 0.9, but the first has only 10 observations while the second has 1000. The statistical evidence is dramatically different.
 
-Therefore the project reports a separate confidence measure.
+Therefore, the system separately reports a confidence measure that reflects the strength of evidence for the selected transition.
 
-### 7. Wilson lower confidence bound
+### Wilson confidence interval
 
-For a selected transition with `k` successes out of `n` observations, let:
+The implemented confidence metric uses the lower bound of the Wilson score interval.
 
-$$
-\\hat p=\\frac{k}{n}.
-$$
-
-For the default 95% confidence level:
+For a transition observed $k$ times out of $n$ total transitions from the current state, let:
 
 $$
-z=1.96.
+\hat{p} = \frac{k}{n}
+$$
+
+At the default 95% confidence level:
+
+$$
+z = 1.96
 $$
 
 The lower bound of the Wilson interval is:
 
 $$
-L
-=
-\\frac
-{
-\\hat p+\\frac{z^2}{2n}
+L = \frac{
+\hat{p} + \frac{z^2}{2n}
 -
-z\\sqrt{
-\\frac{\\hat p(1-\\hat p)}{n}
+z\sqrt{
+\frac{\hat{p}(1-\hat{p})}{n}
 +
-\\frac{z^2}{4n^2}
+\frac{z^2}{4n^2}
 }
+}{
+1+\frac{z^2}{n}
 }
-{
-1+\\frac{z^2}{n}
-}.
 $$
 
-The implementation uses this lower bound as the confidence value exposed by a prediction.
+This lower bound is clamped to $[0, 1]$ to prevent tiny floating-point artifacts.
 
-The result is clamped to:
+The system reports this lower bound as the confidence value for a prediction.
 
-$$
-0\\le L\\le1
-$$
-
-to protect the public API from tiny floating-point boundary errors.
-
-### 8. Interpretation
-
-The important distinction is:
+### Critical distinction
 
 $$
-\\text{transition probability}
-\\neq
-\\text{probability of prediction correctness}
-\\neq
-\\text{confidence}
+\text{transition probability} \ne \text{prediction correctness probability} \ne \text{confidence}
 $$
 
-Transition probability describes the empirical transition distribution.
+- **Transition probability** ($\hat{P}$) describes the empirical distribution of observed next states from the current state.
+- **Confidence** ($L$) is a statistical lower bound for the probability of the selected transition, accounting for sample size.
+- **Prediction correctness probability** is neither of these; it would require additional modeling of whether future observations will match the learned distribution.
 
-Wilson confidence describes the statistical lower bound for the estimated probability of the selected transition.
+Experiments in this repository evaluate whether these quantities provide useful information for adaptation decisions. They are treated as separate and distinct concepts.
 
-Experiments in this repository evaluate whether these quantities provide useful information for adaptation decisions; they are not treated as interchangeable concepts.
+---
 
 ## Decision model
 
-### 9. Confidence threshold
+Adaptation is controlled by three gates that must all pass:
 
-Let `\\tau_c` be the configured confidence threshold.
+### Confidence threshold
 
-The confidence condition is:
-
-$$
-C\\ge\\tau_c.
-$$
-
-### 10. Margin threshold
-
-Let `\\tau_m` be the optional margin threshold:
+Let $\tau_c$ be the configured confidence threshold. The confidence gate is:
 
 $$
-M\\ge\\tau_m.
+C \ge \tau_c
 $$
 
-The current policy therefore permits adaptation only when both configured conditions pass:
+### Margin threshold
+
+Let $\tau_m$ be the optional margin threshold:
 
 $$
-C\\ge\\tau_c
-\\quad\\land\\quad
-M\\ge\\tau_m.
+M \ge \tau_m
 $$
 
 The default margin threshold is zero, so margin does not restrict decisions unless explicitly configured.
 
-### 11. Safety constraint
+### Combined policy
 
-Even a statistically acceptable prediction can be rejected by application-defined safety constraints.
-
-For a predicted state `s`, define:
+Statistical adaptation is allowed if and only if both gates pass:
 
 $$
-Safety(s)\\in\\{\\text{true},\\text{false}\\}.
+C \ge \tau_c \quad \land \quad M \ge \tau_m
 $$
 
-With multiple constraints:
+### Safety constraints
+
+Even when statistical conditions are met, application-defined safety constraints must be satisfied. For a predicted state $s$, define:
 
 $$
-Safety(s)
-=
-\\bigwedge_{r=1}^{q} C_r(s).
+\text{Safety}(s) = \bigwedge_{r=1}^{q} C_r(s)
 $$
 
-Adaptation is therefore allowed only when:
+where $C_r(s)$ is the $r$-th constraint function.
+
+### Final adaptation decision
+
+Adaptation is performed if and only if:
 
 $$
-Decision=Adapt
-$$
-
-if and only if:
-
-$$
-C\\ge\\tau_c
-\\quad\\land\\quad
-M\\ge\\tau_m
-\\quad\\land\\quad
-Safety(s)=\\text{true}.
+\text{Adapt} \iff C \ge \tau_c \quad \land \quad M \ge \tau_m \quad \land \quad \text{Safety}(s) = \text{true}
 $$
 
 Otherwise:
 
 $$
-Decision=Fallback.
+\text{Decision} = \text{Fallback}
 $$
 
-The fallback state is the current deterministic state.
+The fallback returns the current deterministic application state.
 
-## Online learning lifecycle
+---
 
-For a normal state update:
+## Online learning semantics
 
-$$
-s_t\\rightarrow s_{t+1}
-$$
+### Observation on commit
 
-is first applied as ordinary React state.
-
-After React commits the new state, the transition is observed:
+When the application calls `setState` or the React engine triggers a state update, the new state is applied immediately as ordinary React state. After React commits the update:
 
 $$
-N(s_t,s_{t+1})\\leftarrow N(s_t,s_{t+1})+1.
+N(s_t, s_{t+1}) \leftarrow N(s_t, s_{t+1}) + 1
 $$
 
-At a later explicit `advance()` call:
+The transition is recorded in the learner's model. Observation is automatic; no explicit action is required.
+
+### Prediction on explicit advance
+
+Adaptation happens only when the application explicitly calls `advance()`:
 
 $$
-s_t
-\\rightarrow
-\\text{predict}
-\\rightarrow
-\\text{confidence}
-\\rightarrow
-\\text{decision}
-\\rightarrow
-\\text{safety}
-\\rightarrow
-\\text{adapt/fallback}.
+s_t \to \text{predict} \to \text{confidence} \to \text{decision} \to \text{safety} \to \text{adapt/fallback}
 $$
 
-The learned adaptation is **explicitly triggered**. The hook does not silently replace every application-controlled state update with a learned prediction.
+The application retains full control. Learned adaptation does not occur silently and does not replace application-driven state updates.
 
-## Complexity
+### Functional updates
 
-For a source state with `K` distinct observed destinations:
+React's functional update pattern is supported:
 
+```tsx
+setState(prevState => nextState)
+```
+
+The transition is still observed after commit, using the resolved previous and next states.
+
+---
+
+## Computational complexity
+
+For a source state $s_i$ with $K$ distinct observed destination states:
+
+**Observation:**
 $$
-\\text{observe}=O(1)
+\text{observe} = O(1)
 $$
 
-and the probability lookup is:
+Recording a transition requires a single dictionary lookup and increment.
 
+**Probability lookup:**
 $$
-\\text{getProbability}=O(1).
-$$
-
-Current prediction selection scans the candidate destinations:
-
-$$
-\\text{predictNext}=O(K).
+\text{getProbability} = O(1)
 $$
 
-This implementation is intentionally simple and transparent. Benchmarks in `benchmarks/transitionLearner.bench.ts` measure how this scales as `K` grows.
+Retrieving the frequency count for a specific transition is constant time.
+
+**Prediction:**
+$$
+\text{predictNext} = O(K)
+$$
+
+Selecting the maximum-frequency destination requires scanning all $K$ candidates.
+
+**Confidence computation:**
+$$
+\text{confidence} = O(1)
+$$
+
+Wilson interval calculation is a closed-form formula.
+
+This implementation is intentionally simple and transparent. The algorithmic cost is dominated by prediction, which is linear in the number of observed destination states. Benchmarks in `benchmarks/transitionLearner.bench.ts` measure empirical scaling as $K$ varies.
+
+---
 
 ## Memory bound
 
-The learner optionally limits the number of unique transitions:
+The learner optionally limits memory usage by bounding the number of unique transitions.
+
+Let $U$ be the number of unique transitions currently observed and $M$ be the configured limit:
 
 $$
-U\\le M
+U \le M
 $$
-
-where `M` is `maxUniqueTransitions`.
 
 When the limit is reached:
 
-- existing transitions can continue accumulating observations
-- new unique transitions are rejected
-- there is no eviction policy in version 0.1.0
+- **Existing transitions** continue to accumulate observations indefinitely.
+- **New unique transitions** are rejected; an attempt to transition to a previously unseen destination is not recorded.
+- **No eviction policy** is implemented in version 0.1.0.
 
-The absence of eviction is deliberate: eviction would introduce another learning policy whose effects would need separate evaluation.
+The absence of eviction is deliberate. An eviction strategy would introduce another adaptive mechanism whose effects would need separate evaluation. By not evicting, the implementation preserves all historical observations up to the transition budget.
+
+---
 
 ## React API
 
-```tsx
-import { useLearnableState } from "react-learnable-usestate-hook";
-
-const [state, setState, learning] = useLearnableState("home", {
-  confidenceThreshold: 0.8,
-  marginThreshold: 0.2,
-});
-```
-
-The tuple is:
-
-```text
-[state, setState, learning]
-```
-
-`setState` preserves the familiar direct-value and functional-update patterns.
-
-The learning object exposes:
-
-```text
-learning.prediction
-learning.decision
-learning.observations
-learning.lastResult
-learning.advance()
-```
-
-## Custom state identity
-
-For `string` and `number` states, the default key is the state value itself.
-
-For object states, supply a stable identity function:
+### Hook signature
 
 ```tsx
-type Page = {
-  id: string;
-  title: string;
-};
+const [state, setState, learning] = useLearnableState(initialState, options);
+```
 
-const [page, setPage, learning] = useLearnableState<Page>(initialPage, {
+**Parameters:**
+
+- `initialState`: The initial state value of any type.
+- `options`: Configuration object (optional).
+
+**Returns:**
+
+- `state`: Current application state.
+- `setState`: Function to update state (same semantics as `useState`).
+- `learning`: Object exposing learning-related properties and methods.
+
+### setState
+
+The `setState` function preserves the full `useState` API:
+
+```tsx
+setState(nextState);              // direct value
+setState(prevState => nextState); // functional update
+```
+
+### learning object
+
+The `learning` object exposes the following properties and methods:
+
+**Properties:**
+
+- `learning.prediction` — Current prediction result (or `null` if no prediction has been made).
+- `learning.decision` — Current decision state (e.g., "adapt" or "fallback").
+- `learning.observations` — Current transition frequency counts.
+- `learning.lastResult` — Result of the most recent `advance()` call.
+
+**Methods:**
+
+- `learning.advance()` — Trigger prediction, confidence calculation, decision, and potential adaptation. Returns a result object.
+
+### Configuration options
+
+**`keyOf?: (state: T) => string | number`**
+
+For primitive states (strings, numbers), the default key is the state value itself.
+
+For object states, provide a function that extracts a stable unique key:
+
+```tsx
+type Page = { id: string; title: string };
+
+const [page, setPage, learning] = useLearnableState(initialPage, {
   keyOf: page => page.id,
 });
 ```
 
-The `keyOf` function defines the identity used by the transition model.
+The key function defines state identity within the learning model. Ensure it returns consistent values for the same logical state.
 
-## Safety constraints
+**`confidenceThreshold?: number`**
+
+Minimum Wilson confidence required for adaptation. Range: `[0, 1]`. Default: `0.8`.
+
+Predictions with lower confidence are rejected even if margin and safety conditions pass.
+
+**`marginThreshold?: number`**
+
+Minimum prediction margin required for adaptation. Range: `[0, 1]`. Default: `0`.
+
+If set to a positive value, the prediction must dominate its runner-up by at least this amount.
+
+**`safetyConstraints?: Array<(nextState: T) => boolean>`**
+
+Array of constraint functions. Each function receives the predicted next state and must return `true` for adaptation to be allowed.
+
+All constraints must pass. If any returns `false`, adaptation is rejected and fallback occurs.
 
 ```tsx
 const [state, setState, learning] = useLearnableState("home", {
   safetyConstraints: [
     nextState => nextState !== "blocked",
+    nextState => nextState !== "error",
   ],
 });
 ```
 
-Every configured constraint must pass before an adaptation is accepted.
+**`maxUniqueTransitions?: number`**
 
-## Example
+Optional limit on the number of unique transitions to record. Default: no limit.
 
-The repository contains a small example under `examples/basic/` demonstrating:
+---
 
-```text
-user update
-    ↓
-committed state
-    ↓
-observation
-    ↓
-learned transition model
-    ↓
-prediction
-    ↓
-confidence + margin
-    ↓
-decision + safety
-    ↓
-explicit adaptation
+## Examples
+
+### Primitive state with confidence threshold
+
+```tsx
+import { useLearnableState } from "react-learnable-usestate-hook";
+
+function PageNavigation() {
+  const [page, setPage, learning] = useLearnableState("home", {
+    confidenceThreshold: 0.85,
+  });
+
+  const handleNavigate = (nextPage) => {
+    setPage(nextPage); // Apply state immediately
+  };
+
+  const handlePredictiveAdvance = () => {
+    learning.advance(); // Trigger prediction and optional adaptation
+  };
+
+  return (
+    <div>
+      <p>Current page: {page}</p>
+      <button onClick={() => handleNavigate("search")}>Search</button>
+      <button onClick={() => handleNavigate("profile")}>Profile</button>
+      <button onClick={handlePredictiveAdvance}>
+        Auto-navigate (if confident)
+      </button>
+      {learning.prediction && (
+        <p>
+          Predicted next: {learning.prediction.predictedState}
+          (confidence: {learning.prediction.confidence.toFixed(2)})
+        </p>
+      )}
+    </div>
+  );
+}
 ```
+
+### Object state with keyOf
+
+```tsx
+type Document = {
+  id: string;
+  title: string;
+  content: string;
+};
+
+function DocumentEditor() {
+  const [doc, setDoc, learning] = useLearnableState(initialDoc, {
+    keyOf: d => d.id,
+    confidenceThreshold: 0.8,
+  });
+
+  const updateContent = (newContent) => {
+    setDoc(prev => ({ ...prev, content: newContent }));
+  };
+
+  const predictNextDocument = () => {
+    learning.advance();
+    if (learning.decision === "adapt") {
+      // Adaptation occurred; use learning.prediction.predictedState
+    }
+  };
+
+  return (
+    <div>
+      <h1>{doc.title}</h1>
+      <textarea value={doc.content} onChange={e => updateContent(e.target.value)} />
+      <button onClick={predictNextDocument}>Predict next document</button>
+    </div>
+  );
+}
+```
+
+### Safety constraints
+
+```tsx
+const [state, setState, learning] = useLearnableState("home", {
+  confidenceThreshold: 0.8,
+  safetyConstraints: [
+    nextState => !["blocked", "error"].includes(nextState),
+    nextState => userHasPermissionFor(nextState),
+  ],
+});
+```
+
+If any constraint returns `false`, adaptation is rejected regardless of confidence or margin.
+
+---
+
+## Custom state identity
+
+For object or complex states, the `keyOf` function is essential.
+
+The learning model uses the key to identify unique states and build transition frequencies. Without a custom key function, the hook cannot correctly learn from object state transitions because object identity (reference equality) changes with every update.
+
+Provide a `keyOf` function that returns a stable identifier for each logical state:
+
+```tsx
+type Page = { id: string; route: string };
+
+const [page, setPage, learning] = useLearnableState(initialPage, {
+  keyOf: p => p.id,
+});
+```
+
+If `keyOf` is omitted for primitives, the state value itself is used as the key.
+
+---
+
+## Memory bound
+
+To prevent unbounded memory growth, configure an upper limit on unique transitions:
+
+```tsx
+const [state, setState, learning] = useLearnableState(initialState, {
+  maxUniqueTransitions: 100,
+});
+```
+
+Once $U$ reaches $M = 100$, new transitions are rejected. Existing transitions continue to accumulate observations without eviction.
+
+This design preserves historical data while preventing unlimited growth. The trade-off is that the model stops learning about new transition patterns after the limit is reached.
+
+---
 
 ## Experimental evaluation
 
-The repository intentionally treats empirical evidence as part of the implementation.
+The repository includes reproducible experiments to evaluate the learned model's behavior.
+
+### Workloads
+
+Experiments use synthetic state transition traces designed to test different scenarios:
+
+- **Deterministic traces** where each state has exactly one observed successor.
+- **Mostly deterministic traces** with occasional noise.
+- **Noisy traces** with multiple frequent successors and unpredictable transitions.
+- **Random traces** where transitions are uniformly distributed.
 
 ### Utility experiments
 
-The included synthetic traces demonstrate that the current learner can exploit predictable transition structure while becoming conservative when confidence is low.
+Deterministic traces achieve near-perfect prediction accuracy (>99%) with high confidence.
 
-The included experiments have observed behavior such as:
+Mostly deterministic traces retain high prediction accuracy (>90%) even with occasional noise.
 
-- deterministic traces achieving near-perfect prediction
-- mostly deterministic traces retaining high prediction accuracy
-- noisy traces producing substantially lower confidence
-- random traces producing low-quality predictions and no accepted adaptation under conservative thresholds
+Noisy traces reduce prediction accuracy and confidence proportionally to noise level.
 
-These are results for the repository's synthetic workloads only; they are not general performance or accuracy guarantees.
+Random traces produce poor prediction accuracy (<20%) and low confidence, resulting in no accepted adaptations under conservative policy settings.
+
+**These results apply only to the tested synthetic workloads and are not general performance guarantees.**
+
+### Threshold experiments
+
+The repository includes sweeps over confidence thresholds to evaluate trade-offs between false-positive adaptations (incorrect predictions) and false-negative rejections (high-confidence predictions that are wrongly rejected).
+
+Results show that fixed thresholds alone do not eliminate false positives and that threshold tuning is workload-dependent.
+
+### Margin experiments
+
+Experiments evaluate whether prediction margin provides additional predictive value beyond confidence alone.
+
+Current results in version 0.1.0 do not establish that margin consistently improves adaptation accuracy. Margin is available as an optional gate but is not proven to be beneficial in all scenarios.
 
 ### Probability quality
 
-The repository also evaluates the quality of the empirical transition probability using accuracy and a Brier-style score for the event that the selected prediction is correct.
+The selected prediction probability $P_1$ is evaluated using:
 
-The Brier score used by the experiment is:
+1. **Accuracy:** Fraction of predictions that match the actual next state.
+2. **Brier score:** Average squared error between predicted probability and correctness indicator.
 
-$$
-BS
-=
-\\frac{1}{N}
-\\sum_{i=1}^{N}
-(p_i-y_i)^2,
-$$
-
-where `p_i` is the selected prediction probability and `y_i` is 1 when the prediction is correct and 0 otherwise.
-
-Lower scores are better.
-
-### Reliability
-
-Confidence reliability is evaluated using bucketed empirical accuracy and expected calibration error:
+The Brier score for the event "selected prediction is correct" is:
 
 $$
-ECE
-=
-\\sum_b
-\\frac{n_b}{N}
-\\left|
-acc_b-conf_b
-\\right|.
+BS = \frac{1}{N} \sum_{i=1}^{N} (p_i - y_i)^2
 $$
 
-This should be interpreted as an experiment-specific reliability measure, not a universal calibration guarantee.
+where $p_i$ is the selected prediction probability and $y_i = 1$ if the prediction matched the actual transition, $y_i = 0$ otherwise.
 
-## Performance observations
+Lower Brier scores indicate better probability calibration.
 
-The current data structure provides approximately constant-time probability lookup, while prediction remains linear in the number of unique candidate destinations.
+### Confidence reliability
 
-The repository includes separate React-level benchmarks because algorithmic latency alone does not represent the overhead experienced by a React application.
+Confidence reliability is evaluated by comparing predicted confidence levels to empirical accuracy across confidence buckets.
 
-The current benchmark results should be treated as engineering measurements, not formal performance certification.
+Expected calibration error (ECE) is computed as:
 
-## Design principles
+$$
+\text{ECE} = \sum_b \frac{n_b}{N} \left| \text{acc}_b - \text{conf}_b \right|
+$$
 
-- Preserve ordinary React state semantics.
-- Learn from committed transitions rather than speculative updates.
-- Keep learning logic independent from React.
-- Separate probability, confidence, prediction, decision, safety, and execution.
-- Prefer deterministic fallback over uncontrolled adaptation.
-- Bound model growth.
-- Measure behavior instead of assuming that learning is beneficial.
-- Keep experimental mechanisms explicit.
+where $\text{acc}_b$ is the empirical accuracy within confidence bucket $b$ and $\text{conf}_b$ is the average predicted confidence in that bucket.
 
-## Limitations of 0.1.0
+Lower ECE indicates better calibration between predicted and actual confidence.
 
-- The learner uses first-order transition frequencies.
-- Prediction selection is currently `O(K)` over candidate destinations.
-- Wilson confidence is a statistical lower bound for transition probability, not a calibrated guarantee of prediction correctness.
-- Fixed thresholds are not proven optimal.
-- Prediction margin is experimental and is not established as a general improvement.
-- No persistence layer is included.
-- No distributed learning is included.
-- No transition eviction strategy is included.
-- The experiments use synthetic traces and are not representative of all React applications.
+**Important:** The computed ECE is an experiment-specific reliability measure. It does not constitute a universal calibration guarantee and should not be interpreted as proof that confidence estimates are universally valid across all possible workloads.
 
-## Development
+### Benchmark results
 
-```bash
-pnpm install
-pnpm test
-pnpm run typecheck
-pnpm run build
-```
+The repository includes separate benchmarks for core algorithm performance and React-level overhead.
 
-Benchmarks:
+**Core algorithm benchmark** (`benchmarks/transitionLearner.bench.ts`) measures:
 
-```bash
-pnpm run benchmark
-pnpm run benchmark:react
-```
+- Transition observation latency
+- Probability lookup latency
+- Prediction computation time
+- Memory consumption
 
-Experiments:
+Benchmarks are performed on a local machine and should be treated as engineering measurements, not formal performance certification.
+
+**React benchmark** (`benchmarks/react.bench.ts`) measures the overhead of the hook within a React component render cycle.
+
+**Experimental scripts:**
 
 ```bash
 pnpm run experiment:utility
@@ -604,15 +727,225 @@ pnpm run experiment:probability
 pnpm run experiment:reliability
 ```
 
+---
+
+## Performance observations
+
+**Algorithm complexity:**
+
+- Observation: $O(1)$
+- Probability lookup: $O(1)$
+- Prediction: $O(K)$ where $K$ is the number of observed destination states
+
+**React overhead:**
+
+The hook adds memory overhead for tracking transition frequencies and minimal computational overhead per state update. The React-level benchmark includes rendering cost, so algorithmic latency alone does not represent the actual impact on application performance.
+
+**Benchmarks under `benchmarks/`:**
+
+- `transitionLearner.bench.ts` — Core learner performance
+- `react.bench.ts` — React integration overhead
+
+Results from local benchmarks should be interpreted as engineering measurements in a specific environment, not as universally applicable performance characteristics.
+
+---
+
+## Design principles
+
+- **Preserve React state semantics.** The hook fully supports direct and functional updates.
+- **Learn from committed transitions.** Observation occurs after React commits state, not during speculative updates.
+- **Keep learning independent from React.** The core learning engine is a separate module.
+- **Separate concerns.** Observation, prediction, confidence, decision, safety, and execution are distinct stages.
+- **Prefer deterministic fallback.** If any gate fails, the system returns to the current application state rather than attempting unvalidated adaptation.
+- **Bound model growth.** Memory is optional-limited to prevent unbounded accumulation.
+- **Measure behavior.** Experiments evaluate actual behavior rather than assuming learning is beneficial.
+- **Keep mechanisms explicit.** Adaptation is explicitly triggered; there is no implicit or silent prediction-based state modification.
+
+---
+
+## Limitations of 0.1.0
+
+- **First-order model.** The learner uses only single-step transition frequencies. No higher-order patterns or temporal dependencies are modeled.
+- **Prediction complexity.** Prediction is $O(K)$ and becomes expensive if a state has many observed destinations.
+- **Fixed thresholds.** Confidence and margin thresholds are statically configured. No adaptive threshold tuning is provided.
+- **Wilson confidence limitations.** Wilson confidence is a statistical lower bound for transition probability, not a calibrated guarantee of prediction correctness. The relationship between confidence and prediction accuracy is workload-dependent.
+- **Margin effectiveness.** Prediction margin is available but version 0.1.0 experiments do not establish that it provides consistent improvement over confidence alone.
+- **No persistence.** The learned model is memory-resident and lost on application reload.
+- **No distributed learning.** The model cannot be shared or synchronized across multiple instances or processes.
+- **No eviction policy.** Once the unique transition limit is reached, new transitions are permanently rejected. No adaptive eviction strategy is implemented.
+- **Synthetic evaluation.** Experiments use synthetic traces designed specifically for testing. Results are not representative of all React applications in production environments.
+- **Tie-breaking.** In the case of equal-frequency predictions, selection is based on insertion order. This is deterministic but not semantically principled.
+
+---
+
+## Installation and setup
+
+### Install as an npm package
+
+After the package is published to npm, install it with `pnpm`:
+
+```bash
+pnpm add react-learnable-usestate-hook
+```
+
+Or with npm:
+
+```bash
+npm install react-learnable-usestate-hook
+```
+
+The library declares React as a peer dependency. A compatible React version must therefore already be installed in the consuming application.
+
+Example:
+
+```bash
+pnpm add react react-dom react-learnable-usestate-hook
+```
+
+Then import the public API:
+
+```tsx
+import { useLearnableState } from "react-learnable-usestate-hook";
+```
+
+### Install the repository for development
+
+To work on the library itself, clone the repository:
+
+```bash
+git clone https://github.com/peymanpro/react-learnable-usestate-hook.git
+cd react-learnable-usestate-hook
+```
+
+Install all development dependencies with pnpm:
+
+```bash
+pnpm install
+```
+
+The repository uses `pnpm` as its package manager. The package manager version is declared in `package.json`.
+
+After installation, run the standard verification commands:
+
+```bash
+pnpm test
+pnpm run typecheck
+pnpm run build
+```
+
+---
+
+## Development commands
+
+**Run tests:**
+
+```bash
+pnpm test
+```
+
+**Run TypeScript type checking:**
+
+```bash
+pnpm run typecheck
+```
+
+**Build the distributable package:**
+
+```bash
+pnpm run build
+```
+
+**Run the core learner benchmark:**
+
+```bash
+pnpm run benchmark
+```
+
+**Run the React integration benchmark:**
+
+```bash
+pnpm run benchmark:react
+```
+
+**Run the experimental evaluations:**
+
+```bash
+pnpm run experiment:utility
+pnpm run experiment:threshold
+pnpm run experiment:margin
+pnpm run experiment:policy
+pnpm run experiment:calibration
+pnpm run experiment:probability
+pnpm run experiment:reliability
+```
+
+**Validate the npm package contents locally:**
+
+```bash
+pnpm run pack:check
+```
+
+This creates a local npm tarball containing the files that would be distributed to consumers.
+
+### Local package testing
+
+Before publishing a release, the package can be built and packaged locally:
+
+```bash
+pnpm run build
+pnpm run pack:check
+```
+
+The resulting `.tgz` archive can then be installed into another project with:
+
+```bash
+pnpm add /path/to/react-learnable-usestate-hook-0.1.0.tgz
+```
+
+This allows the package to be tested from the perspective of an external consumer before an npm release.
+
+---
+
+## Example
+
+The repository includes a basic example under `examples/basic/` demonstrating:
+
+```text
+user updates state via setState
+        ↓
+React commits state
+        ↓
+transition is observed by learner
+        ↓
+learned transition model updated
+        ↓
+[explicit advance() called]
+        ↓
+prediction generated from model
+        ↓
+confidence computed
+        ↓
+decision gates checked
+        ↓
+safety constraints validated
+        ↓
+adaptation executed or fallback applied
+```
+
+The example illustrates the separation between application-driven state updates (which are immediate and deterministic) and learned adaptation (which is explicit and gated).
+
+---
+
 ## Research provenance
 
-This implementation is inspired by architectural concepts explored in the Learning-Native Adaptive Software Framework (LNASF).
+This implementation is inspired by architectural concepts explored in the Learning-Native Adaptive Software Framework (LNASF):
 
-https://github.com/peymanpro/learning-native-adaptive-software-framework
+- GitHub: https://github.com/peymanpro/learning-native-adaptive-software-framework
+- Zenodo: https://doi.org/10.5281/zenodo.22141992
 
-https://doi.org/10.5281/zenodo.22141992
+This repository is an implementation experiment informed by that framework's architectural principles. It does not claim novelty for standard statistical or software engineering techniques used here.
 
-This repository is an implementation experiment inspired by those ideas and does not claim novelty for standard mathematical or software-engineering techniques used here.
+---
 
 ## License
 
