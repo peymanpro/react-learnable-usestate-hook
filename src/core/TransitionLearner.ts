@@ -1,9 +1,7 @@
-﻿export type StateKey = string;
+﻿import { wilsonLowerBound } from "./Confidence.js";
+import type { PredictionResult } from "./Prediction.js";
 
-export interface TransitionPrediction {
-  readonly state: StateKey;
-  readonly probability: number;
-}
+export type StateKey = string;
 
 export class TransitionLearner {
   private readonly transitions = new Map<StateKey, Map<StateKey, number>>();
@@ -36,7 +34,7 @@ export class TransitionLearner {
     return (nextStates.get(next) ?? 0) / total;
   }
 
-  predictNext(previous: StateKey): TransitionPrediction | null {
+  predictNext(previous: StateKey): PredictionResult<StateKey> | null {
     const nextStates = this.transitions.get(previous);
 
     if (!nextStates || nextStates.size === 0) {
@@ -57,12 +55,17 @@ export class TransitionLearner {
       return null;
     }
 
-    const total = Array.from(nextStates.values())
+    const observations = Array.from(nextStates.values())
       .reduce((sum, count) => sum + count, 0);
+
+    const probability = bestCount / observations;
+    const confidence = wilsonLowerBound(bestCount, observations);
 
     return {
       state: bestState,
-      probability: bestCount / total
+      probability,
+      observations,
+      confidence
     };
   }
 }
