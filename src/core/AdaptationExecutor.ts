@@ -5,20 +5,11 @@ export interface AdaptationExecutorResult<TState> {
   readonly state: TState;
 }
 
-export interface AdaptationExecutorOptions<TState> {
-  readonly fallback: () => TState;
-}
-
 export class AdaptationExecutor<TState> {
-  private readonly fallback: () => TState;
-
-  constructor(options: AdaptationExecutorOptions<TState>) {
-    this.fallback = options.fallback;
-  }
-
   execute(
     decision: "adapt" | "fallback",
-    predictedState: TState
+    predictedState: TState,
+    fallbackState: TState
   ): AdaptationExecutorResult<TState> {
     if (decision === "adapt") {
       return {
@@ -29,7 +20,7 @@ export class AdaptationExecutor<TState> {
 
     return {
       result: "fallback",
-      state: this.fallback()
+      state: fallbackState
     };
   }
 }

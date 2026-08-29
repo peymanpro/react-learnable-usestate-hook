@@ -3,45 +3,27 @@ import { AdaptationExecutor } from "../src/core/AdaptationExecutor.js";
 
 describe("AdaptationExecutor", () => {
   it("applies the predicted state when adaptation is accepted", () => {
-    const executor = new AdaptationExecutor<string>({
-      fallback: () => "home"
-    });
+    const executor = new AdaptationExecutor<string>();
 
-    expect(executor.execute("adapt", "search")).toEqual({
+    expect(executor.execute("adapt", "search", "home")).toEqual({
       result: "adapted",
       state: "search"
     });
   });
 
-  it("uses deterministic fallback when adaptation is rejected", () => {
-    const executor = new AdaptationExecutor<string>({
-      fallback: () => "home"
-    });
+  it("uses the current deterministic state when adaptation is rejected", () => {
+    const executor = new AdaptationExecutor<string>();
 
-    expect(executor.execute("fallback", "search")).toEqual({
+    expect(executor.execute("fallback", "search", "home")).toEqual({
       result: "fallback",
       state: "home"
     });
   });
 
-  it("evaluates the fallback lazily", () => {
-    let fallbackCalls = 0;
+  it("uses the fallback state supplied for each evaluation", () => {
+    const executor = new AdaptationExecutor<number>();
 
-    const executor = new AdaptationExecutor<number>({
-      fallback: () => {
-        fallbackCalls += 1;
-        return 42;
-      }
-    });
-
-    expect(fallbackCalls).toBe(0);
-
-    executor.execute("adapt", 10);
-
-    expect(fallbackCalls).toBe(0);
-
-    executor.execute("fallback", 10);
-
-    expect(fallbackCalls).toBe(1);
+    expect(executor.execute("fallback", 10, 42).state).toBe(42);
+    expect(executor.execute("fallback", 20, 7).state).toBe(7);
   });
 });
