@@ -9,7 +9,9 @@
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "pack:check": "pnpm pack --dry-run",
-    "benchmark": "tsx benchmarks/transitionLearner.bench.ts"
+    "benchmark": "tsx benchmarks/transitionLearner.bench.ts",
+    "benchmark:react": "tsx benchmarks/reactState.bench.ts",
+    "experiment:utility": "tsx benchmarks/learningUtility.ts"
   },
   "keywords": [],
   "author": "",
