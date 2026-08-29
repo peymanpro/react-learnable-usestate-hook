@@ -8,7 +8,8 @@
     "build": "tsc -p tsconfig.json",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "pack:check": "pnpm pack --dry-run"
+    "pack:check": "pnpm pack --dry-run",
+    "benchmark": "tsx benchmarks/transitionLearner.bench.ts"
   },
   "keywords": [],
   "author": "",
@@ -21,6 +22,8 @@
     "@types/react-dom": "^19.2.5",
     "jsdom": "^29.1.1",
     "react": "19.2.8",
+    "tinybench": "6.1.4",
+    "tsx": "4.23.12",
     "typescript": "^7.0.2",
     "vitest": "^4.1.11"
   },
