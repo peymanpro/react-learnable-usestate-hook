@@ -28,10 +28,14 @@ describe("TransitionLearner", () => {
     learner.observe("home", "search");
     learner.observe("home", "profile");
 
-    expect(learner.predictNext("home")).toEqual({
-      state: "search",
-      probability: 0.75
-    });
+    const prediction = learner.predictNext("home");
+
+    expect(prediction).not.toBeNull();
+    expect(prediction?.state).toBe("search");
+    expect(prediction?.probability).toBeCloseTo(0.75);
+    expect(prediction?.observations).toBe(4);
+    expect(prediction?.confidence).toBeGreaterThan(0);
+    expect(prediction?.confidence).toBeLessThan(0.75);
   });
 
   it("treats different previous states independently", () => {
@@ -41,14 +45,15 @@ describe("TransitionLearner", () => {
     learner.observe("home", "search");
     learner.observe("profile", "settings");
 
-    expect(learner.predictNext("home")).toEqual({
-      state: "search",
-      probability: 1
-    });
+    const homePrediction = learner.predictNext("home");
+    const profilePrediction = learner.predictNext("profile");
 
-    expect(learner.predictNext("profile")).toEqual({
-      state: "settings",
-      probability: 1
-    });
+    expect(homePrediction?.state).toBe("search");
+    expect(homePrediction?.probability).toBe(1);
+    expect(homePrediction?.observations).toBe(2);
+
+    expect(profilePrediction?.state).toBe("settings");
+    expect(profilePrediction?.probability).toBe(1);
+    expect(profilePrediction?.observations).toBe(1);
   });
 });
