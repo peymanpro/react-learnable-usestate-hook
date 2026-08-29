@@ -13,7 +13,11 @@
     "benchmark:react": "tsx benchmarks/reactState.bench.ts",
     "experiment:utility": "tsx benchmarks/learningUtility.ts",
     "experiment:threshold": "tsx benchmarks/thresholdSweep.ts",
-    "experiment:margin": "tsx benchmarks/marginSweep.ts"
+    "experiment:margin": "tsx benchmarks/marginSweep.ts",
+    "experiment:policy": "tsx benchmarks/policyComparison.ts",
+    "experiment:calibration": "tsx benchmarks/confidenceCalibration.ts",
+    "experiment:probability": "tsx benchmarks/probabilityQuality.ts",
+    "experiment:reliability": "tsx benchmarks/reliabilityAnalysis.ts"
   },
   "keywords": [],
   "author": "",
