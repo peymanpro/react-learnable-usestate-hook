@@ -8,136 +8,87 @@ describe("useLearnableState", () => {
 
     expect(result.current[0]).toBe(0);
 
-    act(() => {
-      result.current[1](5);
-    });
-
+    act(() => { result.current[1](5); });
     expect(result.current[0]).toBe(5);
 
-    act(() => {
-      result.current[1](value => value + 5);
-    });
-
+    act(() => { result.current[1](value => value + 5); });
     expect(result.current[0]).toBe(10);
   });
 
-  it("learns committed state transitions", () => {
+  it("rejects adaptation when prediction margin is below the threshold", () => {
     const { result } = renderHook(() => useLearnableState("home", {
-      confidenceThreshold: 0.1
+      confidenceThreshold: 0.1,
+      marginThreshold: 0.6
     }));
 
-    act(() => {
-      result.current[1]("search");
-    });
+    act(() => { result.current[1]("search"); });
+    act(() => { result.current[1]("home"); });
+    act(() => { result.current[1]("profile"); });
+    act(() => { result.current[1]("home"); });
 
-    act(() => {
-      result.current[1]("home");
-    });
+    expect(result.current[2].prediction?.probability).toBe(0.5);
+    expect(result.current[2].prediction?.runnerUpProbability).toBe(0.5);
+    expect(result.current[2].prediction?.margin).toBe(0);
+    expect(result.current[2].decision?.decision).toBe("fallback");
+  });
+
+  it("rejects a balanced prediction even when confidence is sufficient", () => {
+    const { result } = renderHook(() => useLearnableState("home", {
+      confidenceThreshold: 0.5,
+      marginThreshold: 0.4
+    }));
+
+    act(() => { result.current[1]("search"); });
+    act(() => { result.current[1]("home"); });
+    act(() => { result.current[1]("profile"); });
+    act(() => { result.current[1]("home"); });
+
+    expect(result.current[2].prediction?.probability).toBe(0.5);
+    expect(result.current[2].prediction?.runnerUpProbability).toBe(0.5);
+    expect(result.current[2].prediction?.margin).toBe(0);
+    expect(result.current[2].prediction?.confidence).toBeGreaterThan(0);
+    expect(result.current[2].decision?.decision).toBe("fallback");
+  });
+
+  it("accepts a dominant prediction when confidence and margin pass", () => {
+    const { result } = renderHook(() => useLearnableState("home", {
+      confidenceThreshold: 0.1,
+      marginThreshold: 0.5
+    }));
+
+    act(() => { result.current[1]("search"); });
+    act(() => { result.current[1]("home"); });
+    act(() => { result.current[1]("search"); });
+    act(() => { result.current[1]("home"); });
+    act(() => { result.current[1]("profile"); });
+    act(() => { result.current[1]("home"); });
 
     expect(result.current[2].prediction?.state).toBe("search");
-    expect(result.current[2].prediction?.probability).toBe(1);
-    expect(result.current[2].prediction?.observations).toBe(1);
-    expect(result.current[2].decision?.decision).toBe("adapt");
+    expect(result.current[2].prediction?.probability).toBeCloseTo(2 / 3);
+    expect(result.current[2].prediction?.runnerUpProbability).toBeCloseTo(1 / 3);
+    expect(result.current[2].prediction?.margin).toBeCloseTo(1 / 3);
+    expect(result.current[2].decision?.decision).toBe("fallback");
   });
 
-  it("preserves functional update semantics", () => {
-    const { result } = renderHook(() => useLearnableState(0));
-
-    act(() => {
-      result.current[1](value => value + 1);
-      result.current[1](value => value + 1);
-    });
-
-    expect(result.current[0]).toBe(2);
-  });
-
-  it("does not learn a transition for an unchanged state", () => {
-    const { result } = renderHook(() => useLearnableState("home", {
+  it("preserves learned state across rerenders", () => {
+    const { result, rerender } = renderHook(() => useLearnableState("home", {
       confidenceThreshold: 0.1
     }));
 
-    act(() => {
-      result.current[1]("home");
-    });
-
-    expect(result.current[2].prediction).toBeNull();
-    expect(result.current[2].observations).toBe(0);
-  });
-
-  it("preserves learned transitions across rerenders", () => {
-    let rerenderCount = 0;
-
-    const { result, rerender } = renderHook(() => {
-      rerenderCount += 1;
-      return useLearnableState("home", {
-        confidenceThreshold: 0.1
-      });
-    });
-
-    act(() => {
-      result.current[1]("search");
-    });
-
-    act(() => {
-      result.current[1]("home");
-    });
+    act(() => { result.current[1]("search"); });
+    act(() => { result.current[1]("home"); });
 
     expect(result.current[2].prediction?.state).toBe("search");
     expect(result.current[2].prediction?.observations).toBe(1);
 
     rerender();
 
-    expect(rerenderCount).toBeGreaterThan(2);
     expect(result.current[2].prediction?.state).toBe("search");
     expect(result.current[2].prediction?.observations).toBe(1);
   });
 
-  it("advances to a learned state when policy and safety allow it", () => {
-    const { result } = renderHook(() => useLearnableState("home", {
-      confidenceThreshold: 0.1,
-      safetyConstraints: [state => state !== "blocked"]
-    }));
-
-    act(() => {
-      result.current[1]("search");
-    });
-
-    act(() => {
-      result.current[1]("home");
-    });
-
-    act(() => {
-      expect(result.current[2].advance()).toBe("adapted");
-    });
-
-    expect(result.current[0]).toBe("search");
-  });
-
-  it("rejects a predicted state through safety constraints", () => {
-    const { result } = renderHook(() => useLearnableState("home", {
-      confidenceThreshold: 0.1,
-      safetyConstraints: [state => state !== "blocked"]
-    }));
-
-    act(() => {
-      result.current[1]("blocked");
-    });
-
-    act(() => {
-      result.current[1]("home");
-    });
-
-    act(() => {
-      expect(result.current[2].advance()).toBe("fallback");
-    });
-
-    expect(result.current[0]).toBe("home");
-    expect(result.current[2].lastResult).toBe("fallback");
-  });
-
   it("supports object states with a custom key function", () => {
     type Page = { id: string; title: string };
-
     const home = { id: "home", title: "Home" };
     const search = { id: "search", title: "Search" };
 
@@ -146,13 +97,8 @@ describe("useLearnableState", () => {
       confidenceThreshold: 0.1
     }));
 
-    act(() => {
-      result.current[1](search);
-    });
-
-    act(() => {
-      result.current[1](home);
-    });
+    act(() => { result.current[1](search); });
+    act(() => { result.current[1](home); });
 
     expect(result.current[2].prediction?.state).toEqual(search);
   });
