@@ -8,3 +8,5 @@ export { DecisionPolicy } from "./core/DecisionPolicy.js";
 export type { AdaptationDecision, DecisionPolicyOptions } from "./core/DecisionPolicy.js";
 export { SafetyConstraints } from "./core/SafetyConstraints.js";
 export type { SafetyConstraint, SafetyEvaluation } from "./core/SafetyConstraints.js";
+export { AdaptationDecisionEngine } from "./core/AdaptationDecisionEngine.js";
+export type { AdaptationDecisionResult, AdaptationDecisionEngineOptions } from "./core/AdaptationDecisionEngine.js";
