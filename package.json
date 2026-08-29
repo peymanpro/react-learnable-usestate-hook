@@ -11,7 +11,8 @@
     "pack:check": "pnpm pack --dry-run",
     "benchmark": "tsx benchmarks/transitionLearner.bench.ts",
     "benchmark:react": "tsx benchmarks/reactState.bench.ts",
-    "experiment:utility": "tsx benchmarks/learningUtility.ts"
+    "experiment:utility": "tsx benchmarks/learningUtility.ts",
+    "experiment:threshold": "tsx benchmarks/thresholdSweep.ts"
   },
   "keywords": [],
   "author": "",
@@ -42,5 +43,6 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     }
-  }
+  },
+  "types": "./dist/index.d.ts"
 }
