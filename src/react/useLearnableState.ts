@@ -1,4 +1,4 @@
-﻿import { useCallback, useRef, useState } from "react";
+﻿import { useCallback, useEffect, useRef, useState } from "react";
 import type { SetStateAction } from "react";
 import { AdaptationDecisionEngine } from "../core/AdaptationDecisionEngine.js";
 import { AdaptationExecutor } from "../core/AdaptationExecutor.js";
@@ -18,6 +18,11 @@ function defaultKeyOf<TState>(state: TState): string | number {
   );
 }
 
+interface CommittedState<TState> {
+  initialized: boolean;
+  value: TState;
+}
+
 export function useLearnableState<TState>(
   initialState: TState | (() => TState),
   options: LearnableStateOptions<TState> = {}
@@ -30,6 +35,11 @@ export function useLearnableState<TState>(
   const [, forceLearningUpdate] = useState(0);
   const engineRef = useRef<LearnableStateEngine<TState> | null>(null);
   const lastResultRef = useRef<"adapted" | "fallback" | null>(null);
+  const skipNextObservationRef = useRef(false);
+  const committedStateRef = useRef<CommittedState<TState>>({
+    initialized: false,
+    value: state
+  });
 
   if (engineRef.current === null) {
     const learner = new TransitionLearner<TState>({
@@ -60,37 +70,51 @@ export function useLearnableState<TState>(
 
   const engine = engineRef.current;
 
+  useEffect(() => {
+    if (!committedStateRef.current.initialized) {
+      committedStateRef.current = {
+        initialized: true,
+        value: state
+      };
+      return;
+    }
+
+    const previousState = committedStateRef.current.value;
+
+    if (Object.is(previousState, state)) {
+      return;
+    }
+
+    committedStateRef.current.value = state;
+
+    if (skipNextObservationRef.current) {
+      skipNextObservationRef.current = false;
+      return;
+    }
+
+    engine.observe(previousState, state);
+  }, [engine, state]);
+
   const setLearnableState = useCallback(
     (action: SetStateAction<TState>) => {
-      setState(current => {
-        const next = typeof action === "function"
-          ? (action as (previousState: TState) => TState)(current)
-          : action;
-
-        if (Object.is(current, next)) {
-          return current;
-        }
-
-        engine.observe(current, next);
-        return next;
-      });
-
-      forceLearningUpdate(value => value + 1);
+      setState(action);
     },
-    [engine]
+    []
   );
 
   const advance = useCallback(() => {
     const evaluation = engine.evaluate(state);
     lastResultRef.current = evaluation.result;
 
-    if (evaluation.result === "adapted") {
-      setLearnableState(evaluation.state);
+    if (evaluation.result === "adapted" && !Object.is(evaluation.state, state)) {
+      skipNextObservationRef.current = true;
+      setState(evaluation.state);
+    } else {
+      forceLearningUpdate(value => value + 1);
     }
 
-    forceLearningUpdate(value => value + 1);
     return evaluation.result;
-  }, [engine, setLearnableState, state]);
+  }, [engine, state]);
 
   const evaluation = engine.evaluate(state);
 

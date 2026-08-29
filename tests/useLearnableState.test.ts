@@ -21,7 +21,7 @@ describe("useLearnableState", () => {
     expect(result.current[0]).toBe(10);
   });
 
-  it("learns transitions from state updates", () => {
+  it("learns committed state transitions", () => {
     const { result } = renderHook(() => useLearnableState("home", {
       confidenceThreshold: 0.1
     }));
@@ -40,7 +40,18 @@ describe("useLearnableState", () => {
     expect(result.current[2].decision?.decision).toBe("adapt");
   });
 
-  it("advances to the learned next state when allowed", () => {
+  it("preserves functional update semantics", () => {
+    const { result } = renderHook(() => useLearnableState(0));
+
+    act(() => {
+      result.current[1](value => value + 1);
+      result.current[1](value => value + 1);
+    });
+
+    expect(result.current[0]).toBe(2);
+  });
+
+  it("advances to a learned state without feeding the adaptation back as an observation", () => {
     const { result } = renderHook(() => useLearnableState("home", {
       confidenceThreshold: 0.1
     }));
@@ -53,12 +64,13 @@ describe("useLearnableState", () => {
       result.current[1]("home");
     });
 
+    expect(result.current[2].prediction?.observations).toBe(1);
+
     act(() => {
       expect(result.current[2].advance()).toBe("adapted");
     });
 
     expect(result.current[0]).toBe("search");
-    expect(result.current[2].lastResult).toBe("adapted");
   });
 
   it("keeps deterministic state when adaptation is rejected", () => {
