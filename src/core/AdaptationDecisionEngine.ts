@@ -23,9 +23,12 @@ export class AdaptationDecisionEngine<TState> {
   }
 
   decide(prediction: PredictionResult<TState>): AdaptationDecisionResult<TState> {
-    const policyDecision = this.policy.decide(prediction.confidence);
-    const safetyEvaluation = this.safety.evaluate(prediction.state);
+    const policyDecision = this.policy.decide({
+      confidence: prediction.confidence,
+      margin: prediction.margin
+    });
 
+    const safetyEvaluation = this.safety.evaluate(prediction.state);
     const shouldAdapt =
       policyDecision === "adapt" && safetyEvaluation.allowed;
 
