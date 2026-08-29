@@ -51,9 +51,51 @@ describe("useLearnableState", () => {
     expect(result.current[0]).toBe(2);
   });
 
-  it("advances to a learned state without feeding the adaptation back as an observation", () => {
+  it("does not learn a transition for an unchanged state", () => {
     const { result } = renderHook(() => useLearnableState("home", {
       confidenceThreshold: 0.1
+    }));
+
+    act(() => {
+      result.current[1]("home");
+    });
+
+    expect(result.current[2].prediction).toBeNull();
+    expect(result.current[2].observations).toBe(0);
+  });
+
+  it("preserves learned transitions across rerenders", () => {
+    let rerenderCount = 0;
+
+    const { result, rerender } = renderHook(() => {
+      rerenderCount += 1;
+      return useLearnableState("home", {
+        confidenceThreshold: 0.1
+      });
+    });
+
+    act(() => {
+      result.current[1]("search");
+    });
+
+    act(() => {
+      result.current[1]("home");
+    });
+
+    expect(result.current[2].prediction?.state).toBe("search");
+    expect(result.current[2].prediction?.observations).toBe(1);
+
+    rerender();
+
+    expect(rerenderCount).toBeGreaterThan(2);
+    expect(result.current[2].prediction?.state).toBe("search");
+    expect(result.current[2].prediction?.observations).toBe(1);
+  });
+
+  it("advances to a learned state when policy and safety allow it", () => {
+    const { result } = renderHook(() => useLearnableState("home", {
+      confidenceThreshold: 0.1,
+      safetyConstraints: [state => state !== "blocked"]
     }));
 
     act(() => {
@@ -64,8 +106,6 @@ describe("useLearnableState", () => {
       result.current[1]("home");
     });
 
-    expect(result.current[2].prediction?.observations).toBe(1);
-
     act(() => {
       expect(result.current[2].advance()).toBe("adapted");
     });
@@ -73,13 +113,14 @@ describe("useLearnableState", () => {
     expect(result.current[0]).toBe("search");
   });
 
-  it("keeps deterministic state when adaptation is rejected", () => {
+  it("rejects a predicted state through safety constraints", () => {
     const { result } = renderHook(() => useLearnableState("home", {
-      confidenceThreshold: 0.99
+      confidenceThreshold: 0.1,
+      safetyConstraints: [state => state !== "blocked"]
     }));
 
     act(() => {
-      result.current[1]("search");
+      result.current[1]("blocked");
     });
 
     act(() => {
