@@ -65,10 +65,7 @@ describe("TransitionLearner", () => {
   });
 
   it("supports object states through a custom key function", () => {
-    type PageState = {
-      id: string;
-      title: string;
-    };
+    type PageState = { id: string; title: string };
 
     const learner = new TransitionLearner<PageState>({
       keyOf: state => state.id
@@ -85,25 +82,67 @@ describe("TransitionLearner", () => {
     expect(prediction?.probability).toBe(1);
     expect(prediction?.observations).toBe(1);
   });
-});
- 
-it("uses the latest state value associated with a key", () => {
-  type PageState = { id: string; title: string };
- 
-  const learner = new TransitionLearner<PageState>({
-    keyOf: state => state.id
+
+  it("uses the latest state value associated with a key", () => {
+    type PageState = { id: string; title: string };
+
+    const learner = new TransitionLearner<PageState>({
+      keyOf: state => state.id
+    });
+
+    const home = { id: "home", title: "Home" };
+    const firstSearch = { id: "search", title: "Search" };
+    const updatedSearch = { id: "search", title: "Search Results" };
+
+    learner.observe(home, firstSearch);
+    learner.observe(home, updatedSearch);
+
+    const prediction = learner.predictNext(home);
+
+    expect(prediction?.state).toEqual(updatedSearch);
+    expect(prediction?.probability).toBe(1);
+    expect(prediction?.observations).toBe(2);
   });
- 
-  const home = { id: "home", title: "Home" };
-  const firstSearch = { id: "search", title: "Search" };
-  const updatedSearch = { id: "search", title: "Search Results" };
- 
-  learner.observe(home, firstSearch);
-  learner.observe(home, updatedSearch);
- 
-  const prediction = learner.predictNext(home);
- 
-  expect(prediction?.state).toEqual(updatedSearch);
-  expect(prediction?.probability).toBe(1);
-  expect(prediction?.observations).toBe(2);
+
+  it("limits the number of unique transitions", () => {
+    const learner = new TransitionLearner<string>({
+      keyOf: state => state,
+      maxUniqueTransitions: 2
+    });
+
+    learner.observe("home", "search");
+    learner.observe("home", "profile");
+    learner.observe("home", "cart");
+
+    expect(learner.getProbability("home", "search")).toBe(0.5);
+    expect(learner.getProbability("home", "profile")).toBe(0.5);
+    expect(learner.getProbability("home", "cart")).toBe(0);
+    expect(learner.predictNext("home")?.observations).toBe(2);
+  });
+
+  it("continues counting known transitions after the unique transition limit is reached", () => {
+    const learner = new TransitionLearner<string>({
+      keyOf: state => state,
+      maxUniqueTransitions: 1
+    });
+
+    learner.observe("home", "search");
+    learner.observe("home", "search");
+    learner.observe("home", "profile");
+
+    expect(learner.getProbability("home", "search")).toBe(1);
+    expect(learner.predictNext("home")?.observations).toBe(2);
+  });
+
+  it("rejects an invalid unique transition limit", () => {
+    expect(() => new TransitionLearner<string>({
+      keyOf: state => state,
+      maxUniqueTransitions: 0
+    })).toThrow();
+
+    expect(() => new TransitionLearner<string>({
+      keyOf: state => state,
+      maxUniqueTransitions: 1.5
+    })).toThrow();
+  });
 });
