@@ -10,3 +10,5 @@ export { SafetyConstraints } from "./core/SafetyConstraints.js";
 export type { SafetyConstraint, SafetyEvaluation } from "./core/SafetyConstraints.js";
 export { AdaptationDecisionEngine } from "./core/AdaptationDecisionEngine.js";
 export type { AdaptationDecisionResult, AdaptationDecisionEngineOptions } from "./core/AdaptationDecisionEngine.js";
+export { AdaptationExecutor } from "./core/AdaptationExecutor.js";
+export type { AdaptationResult, AdaptationExecutorResult, AdaptationExecutorOptions } from "./core/AdaptationExecutor.js";
