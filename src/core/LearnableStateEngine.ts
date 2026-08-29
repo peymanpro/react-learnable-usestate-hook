@@ -36,7 +36,11 @@ export class LearnableStateEngine<TState> {
     const prediction = this.learner.predictNext(currentState);
 
     if (!prediction) {
-      const fallback = this.executor.execute("fallback", currentState);
+      const fallback = this.executor.execute(
+        "fallback",
+        currentState,
+        currentState
+      );
 
       return {
         prediction: null,
@@ -47,7 +51,11 @@ export class LearnableStateEngine<TState> {
     }
 
     const decision = this.decisionEngine.decide(prediction);
-    const execution = this.executor.execute(decision.decision, prediction.state);
+    const execution = this.executor.execute(
+      decision.decision,
+      prediction.state,
+      currentState
+    );
 
     return {
       prediction,

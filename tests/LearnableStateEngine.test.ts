@@ -18,11 +18,7 @@ function createEngine<TState>(
     policy,
     safety
   });
-  const executor = new AdaptationExecutor<TState>({
-    fallback: () => {
-      throw new Error("fallback callback should not be used by this test");
-    }
-  });
+  const executor = new AdaptationExecutor<TState>();
 
   return {
     learner,
@@ -39,13 +35,10 @@ describe("LearnableStateEngine", () => {
     const learner = new TransitionLearner<string>({
       keyOf: state => state
     });
-
     const policy = new DecisionPolicy({ confidenceThreshold: 0.8 });
     const safety = new SafetyConstraints<string>();
     const decisionEngine = new AdaptationDecisionEngine({ policy, safety });
-    const executor = new AdaptationExecutor<string>({
-      fallback: () => "home"
-    });
+    const executor = new AdaptationExecutor<string>();
 
     const engine = new LearnableStateEngine({
       learner,
@@ -87,9 +80,7 @@ describe("LearnableStateEngine", () => {
     const policy = new DecisionPolicy({ confidenceThreshold: 0.9 });
     const safety = new SafetyConstraints<string>();
     const decisionEngine = new AdaptationDecisionEngine({ policy, safety });
-    const executor = new AdaptationExecutor<string>({
-      fallback: () => "home"
-    });
+    const executor = new AdaptationExecutor<string>();
 
     const engine = new LearnableStateEngine({
       learner,
@@ -116,9 +107,7 @@ describe("LearnableStateEngine", () => {
       state => state !== "blocked"
     ]);
     const decisionEngine = new AdaptationDecisionEngine({ policy, safety });
-    const executor = new AdaptationExecutor<string>({
-      fallback: () => "home"
-    });
+    const executor = new AdaptationExecutor<string>();
 
     const engine = new LearnableStateEngine({
       learner,
