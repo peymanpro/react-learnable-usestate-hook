@@ -5,6 +5,8 @@ export type StateKey = string | number;
 export interface TransitionPrediction<TState> {
   readonly state: TState;
   readonly probability: number;
+  readonly runnerUpProbability: number;
+  readonly margin: number;
   readonly observations: number;
   readonly confidence: number;
 }
@@ -99,11 +101,15 @@ export class TransitionLearner<TState> {
 
     let bestKey: StateKey | null = null;
     let bestCount = -1;
+    let secondBestCount = 0;
 
     for (const [stateKey, count] of nextStates) {
       if (count > bestCount) {
+        secondBestCount = bestCount < 0 ? 0 : bestCount;
         bestKey = stateKey;
         bestCount = count;
+      } else if (count > secondBestCount) {
+        secondBestCount = count;
       }
     }
 
@@ -124,11 +130,15 @@ export class TransitionLearner<TState> {
     }
 
     const probability = bestCount / observations;
+    const runnerUpProbability = secondBestCount / observations;
+    const margin = probability - runnerUpProbability;
     const confidence = wilsonLowerBound(bestCount, observations);
 
     return {
       state,
       probability,
+      runnerUpProbability,
+      margin,
       observations,
       confidence
     };

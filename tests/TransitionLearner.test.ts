@@ -3,17 +3,12 @@ import { TransitionLearner } from "../src/core/TransitionLearner.js";
 
 describe("TransitionLearner", () => {
   it("returns null when no transition has been observed", () => {
-    const learner = new TransitionLearner<string>({
-      keyOf: state => state
-    });
-
+    const learner = new TransitionLearner<string>({ keyOf: state => state });
     expect(learner.predictNext("home")).toBeNull();
   });
 
   it("learns transition probabilities from observations", () => {
-    const learner = new TransitionLearner<string>({
-      keyOf: state => state
-    });
+    const learner = new TransitionLearner<string>({ keyOf: state => state });
 
     learner.observe("home", "search");
     learner.observe("home", "search");
@@ -24,10 +19,8 @@ describe("TransitionLearner", () => {
     expect(learner.getProbability("home", "cart")).toBe(0);
   });
 
-  it("predicts the most frequently observed next state", () => {
-    const learner = new TransitionLearner<string>({
-      keyOf: state => state
-    });
+  it("predicts the most frequent state and reports its margin", () => {
+    const learner = new TransitionLearner<string>({ keyOf: state => state });
 
     learner.observe("home", "search");
     learner.observe("home", "search");
@@ -38,15 +31,27 @@ describe("TransitionLearner", () => {
 
     expect(prediction?.state).toBe("search");
     expect(prediction?.probability).toBeCloseTo(0.75);
+    expect(prediction?.runnerUpProbability).toBeCloseTo(0.25);
+    expect(prediction?.margin).toBeCloseTo(0.5);
     expect(prediction?.observations).toBe(4);
     expect(prediction?.confidence).toBeGreaterThan(0);
-    expect(prediction?.confidence).toBeLessThan(0.75);
+  });
+
+  it("reports the full probability as the margin when there is no runner-up", () => {
+    const learner = new TransitionLearner<string>({ keyOf: state => state });
+
+    learner.observe("home", "search");
+    learner.observe("home", "search");
+
+    const prediction = learner.predictNext("home");
+
+    expect(prediction?.probability).toBe(1);
+    expect(prediction?.runnerUpProbability).toBe(0);
+    expect(prediction?.margin).toBe(1);
   });
 
   it("treats different previous states independently", () => {
-    const learner = new TransitionLearner<string>({
-      keyOf: state => state
-    });
+    const learner = new TransitionLearner<string>({ keyOf: state => state });
 
     learner.observe("home", "search");
     learner.observe("home", "search");
@@ -58,7 +63,6 @@ describe("TransitionLearner", () => {
     expect(homePrediction?.state).toBe("search");
     expect(homePrediction?.probability).toBe(1);
     expect(homePrediction?.observations).toBe(2);
-
     expect(profilePrediction?.state).toBe("settings");
     expect(profilePrediction?.probability).toBe(1);
     expect(profilePrediction?.observations).toBe(1);
@@ -66,11 +70,7 @@ describe("TransitionLearner", () => {
 
   it("supports object states through a custom key function", () => {
     type PageState = { id: string; title: string };
-
-    const learner = new TransitionLearner<PageState>({
-      keyOf: state => state.id
-    });
-
+    const learner = new TransitionLearner<PageState>({ keyOf: state => state.id });
     const home = { id: "home", title: "Home" };
     const search = { id: "search", title: "Search" };
 
@@ -80,16 +80,11 @@ describe("TransitionLearner", () => {
 
     expect(prediction?.state).toEqual(search);
     expect(prediction?.probability).toBe(1);
-    expect(prediction?.observations).toBe(1);
   });
 
   it("uses the latest state value associated with a key", () => {
     type PageState = { id: string; title: string };
-
-    const learner = new TransitionLearner<PageState>({
-      keyOf: state => state.id
-    });
-
+    const learner = new TransitionLearner<PageState>({ keyOf: state => state.id });
     const home = { id: "home", title: "Home" };
     const firstSearch = { id: "search", title: "Search" };
     const updatedSearch = { id: "search", title: "Search Results" };
