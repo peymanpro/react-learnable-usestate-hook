@@ -8,7 +8,6 @@
     "build": "tsc -p tsconfig.json",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "pack:check": "pnpm pack --dry-run",
     "benchmark": "tsx benchmarks/transitionLearner.bench.ts",
     "benchmark:react": "tsx benchmarks/reactState.bench.ts",
     "experiment:utility": "tsx benchmarks/learningUtility.ts",
@@ -17,10 +16,17 @@
     "experiment:policy": "tsx benchmarks/policyComparison.ts",
     "experiment:calibration": "tsx benchmarks/confidenceCalibration.ts",
     "experiment:probability": "tsx benchmarks/probabilityQuality.ts",
-    "experiment:reliability": "tsx benchmarks/reliabilityAnalysis.ts"
+    "experiment:reliability": "tsx benchmarks/reliabilityAnalysis.ts",
+    "pack:check": "pnpm pack"
   },
-  "keywords": [],
-  "author": "",
+  "keywords": [
+    "react",
+    "react-hooks",
+    "useState",
+    "state-management",
+    "online-learning",
+    "adaptive-software"
+  ],
   "license": "MIT",
   "packageManager": "pnpm@10.18.3",
   "type": "module",
@@ -49,5 +55,6 @@
       "import": "./dist/index.js"
     }
   },
-  "types": "./dist/index.d.ts"
+  "types": "./dist/index.d.ts",
+  "author": "Peyman Salimi"
 }
