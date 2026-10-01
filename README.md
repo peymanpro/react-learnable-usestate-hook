@@ -157,7 +157,7 @@ for any state with at least one observed outgoing transition.
 The predictor selects the most frequently observed destination from the current state:
 
 $$
-\hat{s}_{t+1} = \operatorname*{arg\,max}_{s_j} N(s_t, s_j)
+\hat{s}_{t+1} = \underset{s_j}{\mathrm{arg\,max}} N(s_t, s_j)
 $$
 
 If multiple states tie for the highest frequency, the implementation uses the insertion order of the transition map as a deterministic tie-breaker. This is intentionally simple in version 0.1.0.
